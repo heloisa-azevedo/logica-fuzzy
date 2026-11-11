@@ -281,7 +281,7 @@ def grafico_correlacao(df):
 # ---------------------------------------------------------------------------
 # Página
 # ---------------------------------------------------------------------------
-st.title("Quão atraente é uma vaga de IA?")
+st.title("Atividade lógica Fuzzy")
 st.write(
     "Um sistema de inferência fuzzy (Mamdani) que dá a cada vaga do dataset uma nota de "
     "0 a 100, do ponto de vista de quem procura emprego. A nota combina salário, "
