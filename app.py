@@ -69,33 +69,6 @@ REGRAS_ORIGINAIS = [
 ]
 
 MODELOS = {
-    "original": {
-        "contagem": "substring",
-        "entradas": {
-            "salary": (np.arange(0, 300001, 1000), {
-                "baixo": ("tri", [0, 0, 100000]),
-                "medio": ("tri", [50000, 150000, 250000]),
-                "alto": ("trap", [150000, 220000, 300000, 300000]),
-            }),
-            "experience": (np.arange(0, 21, 1), {
-                "junior": ("tri", [0, 0, 5]),
-                "pleno": ("tri", [3, 7, 11]),
-                "senior": ("trap", [9, 15, 20, 20]),
-            }),
-            "benefits": (np.arange(0, 11, 1), {
-                "ruim": ("tri", [0, 0, 4]),
-                "bom": ("tri", [3, 6, 9]),
-                "excelente": ("trap", [7, 10, 10, 10]),
-            }),
-            "skills_req": (np.arange(0, 11, 1), {
-                "poucas": ("tri", [0, 0, 3]),
-                "intermediarias": ("tri", [2, 5, 8]),
-                "muitas": ("trap", [6, 10, 10, 10]),
-            }),
-        },
-        "regras": REGRAS_ORIGINAIS
-        + [("rule_tech_6", [("salary", "medio"), ("skills_req", "intermediarias")], "alta")],
-    },
     "corrigido": {
         "contagem": "itens",
         "entradas": {
@@ -266,13 +239,41 @@ def grafico_agregacao(regras_df):
     return fig, score
 
 
-def histograma(serie, titulo, cor):
-    fig, ax = plt.subplots(figsize=(6, 3))
-    ax.hist(serie.dropna(), bins=40, range=(0, 100), color=cor, edgecolor="white")
+def histograma(serie, titulo, cor, bins=40, intervalo=(0, 100), xlabel="Score de atratividade", tamanho=(6, 3)):
+    fig, ax = plt.subplots(figsize=tamanho)
+    ax.hist(serie.dropna(), bins=bins, range=intervalo, color=cor, edgecolor="white")
     ax.set_title(titulo, fontsize=10)
-    ax.set_xlabel("Score de atratividade")
+    ax.set_xlabel(xlabel)
     ax.set_ylabel("Vagas")
     ax.spines[["top", "right"]].set_visible(False)
+    fig.tight_layout()
+    return fig
+
+
+def grafico_barras_titulos(df, n=8):
+    contagem = df["job_title"].value_counts().head(n).sort_values()
+    fig, ax = plt.subplots(figsize=(6, 3))
+    ax.barh(contagem.index, contagem.values, color=CORES["alta"])
+    ax.set_title(f"Cargos mais frequentes (top {n})", fontsize=10)
+    ax.set_xlabel("Vagas")
+    ax.spines[["top", "right"]].set_visible(False)
+    fig.tight_layout()
+    return fig
+
+
+def grafico_correlacao(df):
+    cols = list(COLUNAS.values())
+    corr = df[cols].corr()
+    fig, ax = plt.subplots(figsize=(6, 3))
+    im = ax.imshow(corr.values, cmap="RdBu_r", vmin=-1, vmax=1)
+    nomes = [NOMES_VAR[k].split(" (")[0] for k in COLUNAS]
+    ax.set_xticks(range(len(cols)), nomes, fontsize=8, rotation=20, ha="right")
+    ax.set_yticks(range(len(cols)), nomes, fontsize=8)
+    for i in range(len(cols)):
+        for j in range(len(cols)):
+            ax.text(j, i, f"{corr.values[i, j]:.2f}", ha="center", va="center", fontsize=8)
+    ax.set_title("Correlação entre as variáveis de entrada", fontsize=10)
+    fig.colorbar(im, ax=ax, fraction=0.04)
     fig.tight_layout()
     return fig
 
@@ -294,85 +295,68 @@ if not CAMINHO_DADOS.exists():
     )
     st.stop()
 
-aba_ideia, aba_mudancas, aba_modelo, aba_resultados, aba_simulador, aba_leitura = st.tabs(
-    ["A ideia", "O que foi corrigido", "Como o modelo decide", "Resultados", "Simulador", "Como interpretar"]
+aba_ideia, aba_modelo, aba_resultados, aba_simulador, aba_leitura = st.tabs(
+    ["A ideia", "Como o modelo decide", "Resultados", "Simulador", "Como interpretar"]
 )
 
 # --- A ideia ---------------------------------------------------------------
 with aba_ideia:
-    st.subheader("Por que lógica fuzzy")
-    st.write(
-        "Atratividade não tem fronteira nítida. Um salário de US$ 140 mil não é simplesmente "
-        "\"médio\" ou \"alto\": é um pouco de cada. A lógica fuzzy permite que um valor pertença "
-        "parcialmente a várias categorias e combina essas categorias com regras escritas em "
-        "linguagem natural, como *se o salário é alto e os benefícios são excelentes, a vaga é "
-        "muito atraente*. O resultado é uma nota explicável: dá para dizer exatamente quais "
-        "regras levaram a ela."
-    )
-    st.subheader("O caminho de uma vaga até a nota")
-    st.markdown(
-        "1. **Fuzzificação.** Cada entrada vira graus de pertinência entre 0 e 1 em cada categoria.\n"
-        "2. **Regras.** Cada regra recebe uma força: o *E* entre condições é o mínimo dos graus.\n"
-        "3. **Agregação.** Cada conclusão (baixa, média, alta) é cortada na força da regra mais "
-        "forte que aponta para ela, e as três figuras são sobrepostas.\n"
-        "4. **Defuzzificação.** O centro de massa (centroide) da figura final é a nota."
-    )
     df_c = carregar_e_pontuar("corrigido")
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Vagas analisadas", f"{len(df_c):,}".replace(",", "."))
-    c2.metric("Variáveis de entrada", "4")
-    c3.metric("Regras no modelo corrigido", len(MODELOS["corrigido"]["regras"]))
 
-# --- O que foi corrigido ----------------------------------------------------
-with aba_mudancas:
-    st.write(
-        "A primeira versão do modelo rodava sem erro, mas na prática quase todas as vagas "
-        "recebiam nota entre 60 e 70 e as mais mal pagas desapareciam do resultado. "
-        "Cada correção abaixo responde a um problema concreto encontrado nos dados."
-    )
-    mudancas = pd.DataFrame([
-        {
-            "Problema": "A contagem de tecnologias buscava trechos de texto, então a skill 'r' casava com qualquer palavra com a letra r.",
-            "Correção": "Separar as skills por vírgula e comparar item a item.",
-            "Por quê": "A contagem estava errada em cerca de 70% das vagas.",
-        },
-        {
-            "Problema": "As curvas não cobriam a faixa real dos dados (skills de 3 a 5, benefícios de 5 a 10, salários até 399 mil).",
-            "Correção": "Recalibrar as funções de pertinência pelos percentis do dataset.",
-            "Por quê": "As categorias 'poucas', 'muitas' e 'ruim' nunca eram ativadas, e metade das regras ficava morta.",
-        },
-        {
-            "Problema": "Duas regras tinham a mesma condição e conclusões opostas (rule_tech_3 → média, rule_tech_6 → alta).",
-            "Correção": "Remover a rule_tech_6.",
-            "Por quê": "As duas disparavam juntas em quase toda vaga e prendiam a nota perto de 67.",
-        },
-        {
-            "Problema": "Vagas com salário baixo e perfil júnior não ativavam nenhuma regra e viravam NaN em silêncio.",
-            "Correção": "Regras-base só de salário, que cobrem todo o universo, e aviso de vagas sem nota.",
-            "Por quê": "1.140 vagas, justamente as piores, eram descartadas e enviesavam o resultado.",
-        },
-        {
-            "Problema": "Benefícios e skills quase não mudavam a nota.",
-            "Correção": "Sete regras novas que usam essas variáveis nas faixas de salário médio e extremas.",
-            "Por quê": "Sem elas, o índice era só um reflexo do salário.",
-        },
-    ])
-    st.dataframe(mudancas, hide_index=True, width="stretch")
+    col_texto, col_dados = st.columns([3, 2], gap="large")
 
-    st.subheader("Exemplo: o bug da contagem de skills")
-    st.code(
-        "# antes: 'r' in 'pytorch, docker' → True\n"
-        "sum(1 for tech in techs_chave if tech in texto_lower)\n\n"
-        "# depois: compara cada skill inteira\n"
-        "skills = {s.strip().lower() for s in str(texto).split(',')}\n"
-        "len(skills & set(techs_chave))",
-        language="python",
-    )
+    
+    with col_texto:
+        st.subheader("Por que lógica fuzzy")
+        st.write(
+            "Atratividade não tem fronteira nítida. Um salário de US$ 140 mil não é simplesmente "
+            "\"médio\" ou \"alto\": é um pouco de cada. A lógica fuzzy permite que um valor pertença "
+            "parcialmente a várias categorias e combina essas categorias com regras escritas em "
+            "linguagem natural, como *se o salário é alto e os benefícios são excelentes, a vaga é "
+            "muito atraente*. O resultado é uma nota explicável: dá para dizer exatamente quais "
+            "regras levaram a ela."
+        )
+        st.subheader("O caminho de uma vaga até a nota")
+        st.markdown(
+            "1. **Fuzzificação.** Cada entrada vira graus de pertinência entre 0 e 1 em cada categoria.\n"
+            "2. **Regras.** Cada regra recebe uma força: o *E* entre condições é o mínimo dos graus.\n"
+            "3. **Agregação.** Cada conclusão (baixa, média, alta) é cortada na força da regra mais "
+            "forte que aponta para ela, e as três figuras são sobrepostas.\n"
+            "4. **Defuzzificação.** O centro de massa (centroide) da figura final é a nota."
+        )
+
+
+    # Embaixo: pequeno EDA
+    st.divider()
+    st.subheader("Análise exploratória (EDA)")
+    st.caption("Um retrato rápido das quatro variáveis que alimentam o modelo.")
+
+    e1, e2 = st.columns(2)
+    e1.pyplot(histograma(df_c["salary_usd"], "Distribuição de salários", CORES["alta"], bins=40,
+                         intervalo=(df_c["salary_usd"].min(), df_c["salary_usd"].max()),
+                         xlabel="Salário (USD)", tamanho=(6, 2.8)), clear_figure=True)
+    e2.pyplot(histograma(df_c["years_experience"], "Experiência exigida", CORES["media"], bins=21,
+                         intervalo=(0, 20), xlabel="Anos de experiência", tamanho=(6, 2.8)), clear_figure=True)
+
+    e3, e4 = st.columns(2)
+    e3.pyplot(histograma(df_c["benefits_score"], "Nota de benefícios", CORES["baixa"], bins=25,
+                         intervalo=(df_c["benefits_score"].min(), df_c["benefits_score"].max()),
+                         xlabel="Nota (5 a 10)", tamanho=(6, 2.8)), clear_figure=True)
+    e4.pyplot(grafico_barras_titulos(df_c), clear_figure=True)
+
+    e5, e6 = st.columns([3, 2], gap="large")
+    e5.pyplot(grafico_correlacao(df_c), clear_figure=True)
+    resumo = df_c[list(COLUNAS.values())].describe().T[["mean", "std", "min", "50%", "max"]].round(2)
+    resumo.index = [NOMES_VAR[k] for k in COLUNAS]
+    resumo.columns = ["Média", "Desvio", "Mín", "Mediana", "Máx"]
+    e6.caption("Estatísticas descritivas")
+    e6.dataframe(resumo, width="stretch")
+    nulos = int(df_c[list(COLUNAS.values())].isna().sum().sum())
+    e6.caption(f"Valores ausentes nas variáveis de entrada: {nulos}.")
 
 # --- Como o modelo decide ---------------------------------------------------
 with aba_modelo:
-    versao_vis = st.radio("Versão", ["corrigido", "original"], horizontal=True,
-                          format_func=str.capitalize, key="versao_modelo")
+    versao_vis = "corrigido"
     st.subheader("Funções de pertinência")
     st.caption("Cada curva diz o quanto um valor pertence a uma categoria, de 0 a 1.")
     cols = st.columns(2)
@@ -385,26 +369,20 @@ with aba_modelo:
 
 # --- Resultados -------------------------------------------------------------
 with aba_resultados:
-    df_o = carregar_e_pontuar("original")
     df_c = carregar_e_pontuar("corrigido")
 
     c1, c2, c3 = st.columns(3)
-    c1.metric("Vagas sem nota", int(df_c["score"].isna().sum()),
-              delta=int(df_c["score"].isna().sum() - df_o["score"].isna().sum()), delta_color="inverse")
-    c2.metric("Desvio-padrão da nota", f"{df_c['score'].std():.1f}",
-              delta=f"{df_c['score'].std() - df_o['score'].std():+.1f}")
-    c3.metric("Nota média", f"{df_c['score'].mean():.1f}",
-              delta=f"{df_c['score'].mean() - df_o['score'].mean():+.1f}", delta_color="off")
+    c1.metric("Vagas sem nota", int(df_c["score"].isna().sum()))
+    c2.metric("Desvio-padrão da nota", f"{df_c['score'].std():.1f}")
+    c3.metric("Nota média", f"{df_c['score'].mean():.1f}")
 
-    h1, h2 = st.columns(2)
-    h1.pyplot(histograma(df_o["score"], "Original", "#9AA5AD"), clear_figure=True)
-    h2.pyplot(histograma(df_c["score"], "Corrigido", CORES["alta"]), clear_figure=True)
+    h1 = st.columns(1)[0]
+    h1.pyplot(histograma(df_c["score"], "Frequência da pontuação de atratividade das vagas", CORES["alta"]), clear_figure=True)
 
     st.subheader("Quanto cada variável pesa na nota")
     st.caption("Correlação entre a nota e cada entrada. Perto de 0 significa que a variável quase não influencia.")
     corr = pd.DataFrame({
         "Variável": [NOMES_VAR[v] for v in COLUNAS],
-        "Original": [round(df_o["score"].corr(df_o[c]), 2) for c in COLUNAS.values()],
         "Corrigido": [round(df_c["score"].corr(df_c[c]), 2) for c in COLUNAS.values()],
     })
     st.dataframe(corr, hide_index=True, width="stretch")
