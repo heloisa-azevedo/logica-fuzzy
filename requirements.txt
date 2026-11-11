@@ -1,0 +1,7 @@
+streamlit>=1.50
+scikit-fuzzy>=0.5
+pandas
+numpy
+matplotlib
+networkx
+scipy
