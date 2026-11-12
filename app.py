@@ -545,8 +545,7 @@ def tabela_regras(tabela, com_forca=False):
 
 def sidebar_sobre():
     html('<div class="rotulo-lateral">Sobre o modelo</div>', st.sidebar)
-    linhas = [("Vagas", "15.000"), ("Entradas", str(len(ENTRADAS))), ("Regras", str(len(REGRAS))),
-              ("Método", "Mamdani")]
+    linhas = [("Vagas", "15.000"), ("Entradas", str(len(ENTRADAS))), ("Regras", str(len(REGRAS)))]
     html("".join(f'<div class="linha-lateral"><span>{a}</span><b>{b}</b></div>' for a, b in linhas), st.sidebar)
 
 
