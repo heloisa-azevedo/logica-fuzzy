@@ -425,6 +425,34 @@ def fig_agregacao(regras_df):
     return fig, score
 
 
+def calcular_defuzzificadores(regras_df):
+    """Calcula cinco métodos de defuzzificação sobre a mesma saída agregada."""
+    u = SAIDA_UNIVERSO
+    agregado = np.zeros_like(u, dtype=float)
+
+    for termo, (tp, p) in SAIDA_TERMOS.items():
+        mf = curva(u, tp, p)
+        nivel = regras_df.loc[regras_df["Então"] == termo, "Força"].max()
+        nivel = 0.0 if pd.isna(nivel) else nivel
+        agregado = np.fmax(agregado, np.fmin(nivel, mf))
+
+    metodos = {
+        "Centroide": "centroid",
+        "Bisector": "bisector",
+        "MOM (média dos máximos)": "mom",
+        "SOM (menor dos máximos)": "som",
+        "LOM (maior dos máximos)": "lom",
+    }
+
+    if not agregado.any():
+        return {nome: np.nan for nome in metodos}
+
+    return {
+        nome: float(fuzz.defuzz(u, agregado, metodo))
+        for nome, metodo in metodos.items()
+    }
+
+
 def fig_notas(serie):
     fig, ax = plt.subplots(figsize=(7, 3))
     for ini, fim, termo in [(0, 40, "baixa"), (40, 60, "media"), (60, 100, "alta")]:
@@ -768,6 +796,39 @@ def pagina_simulador():
     st.subheader("3 e 4. Agregação e defuzzificação", anchor=False)
     with st.container(border=True):
         mostrar(fig_agg)
+
+    # Comparação dos métodos de defuzzificação (mesma saída agregada)
+    st.subheader("Comparação entre defuzzificadores", anchor=False)
+    st.write(
+        "A mesma figura fuzzy agregada é convertida em uma nota por cinco métodos "
+        "diferentes. Assim, é possível observar quanto a escolha do método influencia "
+        "a avaliação desta vaga."
+    )
+    comparacao = calcular_defuzzificadores(regras_df)
+    nomes_metodos = list(comparacao.keys())
+    colunas = st.columns(len(nomes_metodos))
+    for col, nome in zip(colunas, nomes_metodos):
+        with col.container(border=True, height="stretch"):
+            valor = comparacao[nome]
+            col.metric(nome, "—" if np.isnan(valor) else br(valor))
+            if nome == "Centroide":
+                col.caption("Método atualmente utilizado pelo modelo.")
+            elif nome.startswith("Bisector"):
+                col.caption("Divide a área agregada em duas metades.")
+            elif nome.startswith("MOM"):
+                col.caption("Média dos pontos de pertinência máxima.")
+            elif nome.startswith("SOM"):
+                col.caption("Menor ponto de pertinência máxima.")
+            else:
+                col.caption("Maior ponto de pertinência máxima.")
+
+    valores_validos = [v for v in comparacao.values() if not np.isnan(v)]
+    if valores_validos:
+        diferenca = max(valores_validos) - min(valores_validos)
+        st.caption(
+            f"Amplitude entre os métodos nesta vaga: {br(diferenca)} pontos. "
+            "Os resultados podem coincidir ou variar conforme o formato da saída agregada."
+        )
 
 
 def pagina_resultados():
